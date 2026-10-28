@@ -1,0 +1,387 @@
+import { searchProducts as localSearchProducts, interpretQuery } from '../utils/searchProducts';
+import { rankSelectedProducts as localRankProducts } from '../utils/rankProducts';
+import { saveFeedbackSubmission as localSaveFeedback, saveSessionProductFeedback as localSaveProductFeedback, saveSessionSearchFeedback as localSaveSearchFeedback } from '../utils/feedback';
+import { MOCK_PRODUCTS } from '../data/products';
+import { getDynamicProductById } from '../utils/dynamicCatalog';
+
+const API_BASE = '/api';
+
+/**
+ * Normalizes backend product object to frontend representation
+ */
+export function normalizeProduct(p) {
+  if (!p) return null;
+  const id = p.product_id || p.id;
+  const priceVal = typeof p.price === 'object' && p.price !== null ? p.price.amount : p.price;
+  const originalPriceVal = typeof p.price === 'object' && p.price !== null ? p.price.original_amount : p.originalPrice;
+
+  // Determine marketplace info
+  let marketplace = {
+    name: 'Amazon India',
+    logo_url: 'https://upload.wikimedia.org/wikipedia/commons/a/a9/Amazon_logo.svg'
+  };
+
+  if (p.marketplace) {
+    if (typeof p.marketplace === 'object') {
+      marketplace = {
+        name: p.marketplace.name || 'Amazon India',
+        logo_url: p.marketplace.logo_url || ''
+      };
+    } else if (typeof p.marketplace === 'string') {
+      const lower = p.marketplace.toLowerCase();
+      marketplace = {
+        name: p.marketplace,
+        logo_url: lower.includes('flipkart')
+          ? 'https://upload.wikimedia.org/wikipedia/en/7/7a/Flipkart_logo.svg'
+          : lower.includes('meesho')
+          ? 'https://upload.wikimedia.org/wikipedia/commons/8/80/Meesho_Logo_Full.png'
+          : 'https://upload.wikimedia.org/wikipedia/commons/a/a9/Amazon_logo.svg'
+      };
+    }
+  }
+
+  const isMeesho = (marketplace.name || '').toLowerCase().includes('meesho');
+  const isFlipkart = (marketplace.name || '').toLowerCase().includes('flipkart');
+  const defaultUrl = isMeesho
+    ? `https://www.meesho.com/search?q=${encodeURIComponent(p.name || '')}`
+    : isFlipkart
+    ? `https://www.flipkart.com/search?q=${encodeURIComponent(p.name || '')}`
+    : p.name
+    ? `https://www.amazon.in/s?k=${encodeURIComponent(p.name)}`
+    : 'https://www.amazon.in';
+
+  return {
+    id: id || `prod-${Math.random().toString(36).substr(2, 6)}`,
+    name: p.name || 'Unnamed Product',
+    brand: p.brand || '',
+    category: p.category || 'laptop',
+    price: typeof priceVal === 'number' ? priceVal : 0,
+    originalPrice: originalPriceVal,
+    rating: p.rating || 4.5,
+    reviewCount: p.rating_count || p.reviewCount || 100,
+    image: p.image_url || p.image || 'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?w=800',
+    fallbackImage: p.fallbackImage,
+    description: p.description || '',
+    marketplace,
+    productUrl: p.product_url || p.productUrl || defaultUrl,
+    specifications: p.specifications || {},
+    features: p.features || [],
+    pros: p.pros || [],
+    cons: p.cons || [],
+    inStock: p.in_stock !== undefined ? p.in_stock : (p.inStock !== undefined ? p.inStock : true),
+    tags: p.tags || [],
+  };
+}
+
+/**
+ * Normalizes backend ranked recommendation item
+ */
+export function normalizeRankedItem(item) {
+  if (!item) return null;
+  const baseProduct = normalizeProduct(item.product || item);
+  return {
+    ...baseProduct,
+    rank: item.rank || 1,
+    score: item.score || 85,
+    isBestMatch: !!item.is_best_match || !!item.isBestMatch,
+    rankReason: item.reason || item.rankReason || 'Matches your specified requirements and budget criteria.',
+    matchHighlights: item.match_highlights || item.matchHighlights || [],
+    budgetSuitability: item.budget_suitability || item.budgetSuitability || 'Within Budget',
+    valueForMoney: item.value_for_money || item.valueForMoney || 'Good',
+    scoreBreakdown: item.score_breakdown || item.scoreBreakdown || {
+      requirementMatch: 30,
+      budgetSuitability: 20,
+      specifications: 18,
+      userRating: 9,
+      valueScore: 8,
+    },
+  };
+}
+
+/**
+ * Check if the backend is online and reachable
+ */
+export async function checkBackendHealth() {
+  try {
+    const res = await fetch(`${API_BASE}/health`, { method: 'GET' });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data && data.status === 'online';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fetch a single product by ID from FastAPI backend with local mock fallback
+ */
+export async function getProductByIdApi(id) {
+  try {
+    const res = await fetch(`${API_BASE}/products/${id}`);
+    if (res.ok) {
+      const data = await res.json();
+      return normalizeProduct(data);
+    }
+  } catch (err) {
+    console.warn(`Backend fetch for product ${id} failed, falling back to local dataset.`, err);
+  }
+
+  const local = MOCK_PRODUCTS.find(p => p.id === id) || getDynamicProductById(id);
+  return local ? normalizeProduct(local) : null;
+}
+
+/**
+ * Performs natural language search with FastAPI backend and automatic fallback
+ */
+export async function searchProductsApi(query, budget, category, purpose) {
+  try {
+    const res = await fetch(`${API_BASE}/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        budget: budget || undefined,
+        category: category || undefined,
+        purpose: purpose || undefined,
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const interpretation = {
+        originalQuery: data.query || query,
+        category: data.interpretation?.category,
+        categoryLabel: data.interpretation?.category_label,
+        budgetLimit: data.interpretation?.budget_limit,
+        budgetLabel: data.interpretation?.budget_label,
+        purpose: data.interpretation?.purpose,
+        keySpecs: data.interpretation?.key_specs || [],
+        notes: data.interpretation?.notes || 'Processed via FastAPI AI requirement extractor',
+      };
+
+      const results = (data.all_results || []).map(normalizeProduct);
+      if (results.length === 0) {
+        const localFallback = localSearchProducts(query);
+        if (localFallback.results.length > 0) {
+          return { ...localFallback, source: 'hybrid-local' };
+        }
+      }
+      return { interpretation, results, source: 'backend' };
+    }
+  } catch (err) {
+    console.warn('Backend search API unreachable, using resilient local search engine.', err);
+  }
+
+  // Fallback to local simulated AI NLP engine
+  const localRes = localSearchProducts(query);
+  return { ...localRes, source: 'local' };
+}
+
+/**
+ * Performs product comparison with FastAPI backend and automatic fallback
+ */
+export async function compareProductsApi(products, query) {
+  const productIds = products.map(p => p.id);
+  try {
+    const res = await fetch(`${API_BASE}/compare`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        product_ids: productIds,
+        query: query || '',
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const topRecommendations = (data.top_recommendations || []).map(normalizeRankedItem);
+      const otherCompared = (data.other_compared || []).map(normalizeRankedItem);
+      const allRanked = [...topRecommendations, ...otherCompared];
+
+      return {
+        topRecommendations,
+        otherCompared,
+        allRanked,
+        source: 'backend',
+      };
+    }
+  } catch (err) {
+    console.warn('Backend compare API unreachable, using resilient local ranking engine.', err);
+  }
+
+  // Fallback to local ranking engine
+  const localRes = localRankProducts(products, query);
+  return { ...localRes, source: 'local' };
+}
+
+/**
+ * Wishlist API with offline fallback
+ */
+export async function getWishlistApi(token) {
+  if (token) {
+    try {
+      const res = await fetch(`${API_BASE}/wishlist`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const items = await res.json();
+        return (items || []).map(item => normalizeProduct(item.product));
+      }
+    } catch (err) {
+      console.warn('Backend wishlist unreachable, using localStorage.', err);
+    }
+  }
+  return null; // Signals caller to use local storage
+}
+
+export async function addToWishlistApi(productId, token) {
+  if (token) {
+    try {
+      await fetch(`${API_BASE}/wishlist`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ product_id: productId }),
+      });
+    } catch {
+      // Ignored for resilient operation
+    }
+  }
+}
+
+export async function removeFromWishlistApi(productId, token) {
+  if (token) {
+    try {
+      await fetch(`${API_BASE}/wishlist/${productId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      // Ignored for resilient operation
+    }
+  }
+}
+
+/**
+ * Feedback APIs with offline fallback
+ */
+export async function submitGeneralFeedbackApi(feedback) {
+  try {
+    const res = await fetch(`${API_BASE}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        category: feedback.category,
+        rating: feedback.rating,
+        message: feedback.message,
+        email: feedback.email || undefined,
+        search_query: feedback.searchQuery || undefined,
+        product_id: feedback.productId || undefined,
+      }),
+    });
+    if (res.ok) {
+      return localSaveFeedback(feedback);
+    }
+  } catch (err) {
+    console.warn('Backend feedback API unreachable, saving locally.', err);
+  }
+  return localSaveFeedback(feedback);
+}
+
+export async function submitProductSentimentApi(record) {
+  try {
+    await fetch(`${API_BASE}/feedback/product`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        product_id: record.productId,
+        choice: record.choice,
+        reason: record.reason,
+        query: record.query,
+      }),
+    });
+  } catch {
+    // Resilient fallback
+  }
+  localSaveProductFeedback(record);
+}
+
+export async function submitSearchSentimentApi(record) {
+  try {
+    await fetch(`${API_BASE}/feedback/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: record.query,
+        choice: record.choice,
+        comment: record.comment,
+      }),
+    });
+  } catch {
+    // Resilient fallback
+  }
+  localSaveSearchFeedback(record);
+}
+
+/**
+ * Authentication APIs with offline fallback
+ */
+export async function loginApi(email, password) {
+  try {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return { success: true, user: data.user, token: data.access_token };
+    } else {
+      const err = await res.json();
+      return { success: false, error: err.detail || 'Invalid email or password' };
+    }
+  } catch {
+    // Local mock login
+    return {
+      success: true,
+      user: {
+        id: 'usr-mock-1',
+        name: email.split('@')[0] || 'Demo User',
+        email,
+        joinedDate: 'October 2026',
+      },
+      token: 'demo-token-123',
+    };
+  }
+}
+
+export async function registerApi(name, email, password) {
+  try {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return { success: true, user: data.user, token: data.access_token };
+    } else {
+      const err = await res.json();
+      return { success: false, error: err.detail || 'Registration failed' };
+    }
+  } catch {
+    // Local mock registration
+    return {
+      success: true,
+      user: {
+        id: `usr-${Date.now()}`,
+        name,
+        email,
+        joinedDate: 'October 2026',
+      },
+      token: 'demo-token-reg',
+    };
+  }
+}
