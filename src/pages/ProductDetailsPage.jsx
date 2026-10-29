@@ -23,6 +23,7 @@ import { useSearchHistory } from '../context/SearchHistoryContext';
 import { ProductFeedbackWidget } from '../components/feedback/ProductFeedbackWidget';
 import { getProductByIdApi } from '../services/api';
 import { getDynamicProductById } from '../utils/dynamicCatalog';
+import { getProductDestination } from '../utils/productLinks';
 
 export const ProductDetailsPage = () => {
   const { id } = useParams();
@@ -87,7 +88,7 @@ export const ProductDetailsPage = () => {
 
   const marketplaceName = product.marketplace?.name || 'Seller';
   const marketplaceLogoUrl = product.marketplace?.logo_url;
-  const originalProductUrl = product.productUrl;
+  const productDestination = getProductDestination(product);
   const isLiveShoppingResult = product.source === 'serpapi-google-shopping';
 
   const handleCompareClick = () => {
@@ -206,10 +207,10 @@ export const ProductDetailsPage = () => {
               </div>
             </div>
 
-            {originalProductUrl ? (
-              <a href={originalProductUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-brand-blue hover:text-brand-blue-hover self-start sm:self-auto hover:underline" title={`Visit ${marketplaceName}`}><span>Visit Seller</span><ExternalLink className="w-3 h-3" /></a>
+            {productDestination.href ? (
+              <a href={productDestination.href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-brand-blue hover:text-brand-blue-hover self-start sm:self-auto hover:underline" title={productDestination.label}><span>{productDestination.label}</span><ExternalLink className="w-3 h-3" /></a>
             ) : (
-              <span className="text-xs text-slate-500 self-start sm:self-auto">Seller link unavailable</span>
+              <span className="text-xs text-slate-500 self-start sm:self-auto">Product link unavailable</span>
             )}
           </div>
 
@@ -241,14 +242,14 @@ export const ProductDetailsPage = () => {
             </button>
 
             {/* Direct External Link to Original Product on Retailer Website */}
-            {originalProductUrl ? (
-              <a id="view-original-product-btn" href={originalProductUrl} target="_blank" rel="noopener noreferrer" className="group inline-flex items-center justify-center gap-2.5 py-3.5 px-5 rounded-xl text-sm font-bold text-slate-800 bg-white hover:bg-slate-50 border border-slate-300 hover:border-slate-400 shadow-xs hover:shadow-sm transition-all" title="Open original seller listing">
+            {productDestination.href ? (
+              <a id="view-original-product-btn" href={productDestination.href} target="_blank" rel="noopener noreferrer" className="group inline-flex items-center justify-center gap-2.5 py-3.5 px-5 rounded-xl text-sm font-bold text-slate-800 bg-white hover:bg-slate-50 border border-slate-300 hover:border-slate-400 shadow-xs hover:shadow-sm transition-all" title={productDestination.label}>
                 <MarketplaceLogo name={marketplaceName} logoUrl={marketplaceLogoUrl} size="sm" />
-                <span className="truncate">View on {marketplaceName}</span>
+                <span className="truncate">{productDestination.label}</span>
                 <ExternalLink className="w-4 h-4 text-slate-400" />
               </a>
             ) : (
-              <button type="button" disabled className="py-3.5 px-5 rounded-xl text-sm text-slate-400 bg-slate-50 border border-slate-200">Seller link unavailable</button>
+              <button type="button" disabled className="py-3.5 px-5 rounded-xl text-sm text-slate-400 bg-slate-50 border border-slate-200">Product link unavailable</button>
             )}
           </div>
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Heart, Check, Plus, ArrowRight } from 'lucide-react';
+import { Heart, Check, Plus, ExternalLink } from 'lucide-react';
 import { formatINR, calculateDiscount } from '../../utils/formatCurrency';
 import { RatingStars } from '../common/RatingStars';
 import { Badge } from '../common/Badge';
@@ -8,6 +8,7 @@ import { MarketplaceLogo } from '../common/MarketplaceLogo';
 import { useCompare } from '../../context/CompareContext';
 import { useSaved } from '../../context/SavedContext';
 import { ProductFeedbackWidget } from '../feedback/ProductFeedbackWidget';
+import { getProductDestination } from '../../utils/productLinks';
 
 export const ProductCard = ({
   product,
@@ -23,6 +24,7 @@ export const ProductCard = ({
   const compared = isCompared(product.id);
   const saved = isSaved(product.id);
   const discount = calculateDiscount(product.originalPrice, product.price);
+  const productDestination = getProductDestination(product);
 
   const handleCompareClick = (e) => {
     e.preventDefault();
@@ -234,13 +236,21 @@ export const ProductCard = ({
               )}
             </button>
 
-            <Link
-              to={`/product/${product.id}`}
-              className="inline-flex items-center justify-center gap-1 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 hover:text-brand-blue rounded-xl border border-slate-200 transition-colors"
-            >
-              <span>Details</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+            {productDestination.href ? (
+              <a
+                href={productDestination.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-1 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 hover:text-brand-blue rounded-xl border border-slate-200 transition-colors"
+              >
+                <span>{productDestination.label}</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            ) : (
+              <span className="inline-flex items-center justify-center px-2 py-2 text-xs font-medium text-slate-400 text-center">
+                {productDestination.label}
+              </span>
+            )}
           </div>
 
           {/* In-Card Feedback Widget */}

@@ -11,7 +11,7 @@ from app.database.mongodb import db_manager
 from app.schemas.search import SearchRequest, SearchResponse
 from app.services.ai_service import parse_natural_language_query
 from app.services.ranking_service import rank_products_for_query
-from app.services.shopping_service import search_shopping_products
+from app.services.shopping_service import enrich_products_with_merchant_urls, search_shopping_products
 
 logger = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/search", tags=["Product Search"])
@@ -44,6 +44,7 @@ async def search_products_endpoint(
             shopping_query = f"{shopping_query} under ₹{budget_text}"
     products = await search_shopping_products(shopping_query)
     top_recs, _ = rank_products_for_query(products, interpretation)
+    await enrich_products_with_merchant_urls([rec.product for rec in top_recs])
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     search_id = f"sch_{uuid.uuid4().hex[:12]}"
 

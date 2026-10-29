@@ -23,6 +23,13 @@ class ProductSchema(BaseModel):
     description: str = ""
     marketplace: MarketplaceInfo = Field(default_factory=MarketplaceInfo)
     product_url: str
+    merchant_url: Optional[str] = None
+    shopping_url: Optional[str] = None
+    # SerpApi lookup metadata stays backend-only; it is never included in API responses.
+    serpapi_product_id: Optional[str] = Field(default=None, exclude=True)
+    serpapi_page_token: Optional[str] = Field(default=None, exclude=True)
+    serpapi_product_api: Optional[str] = Field(default=None, exclude=True)
+    serpapi_immersive_product_api: Optional[str] = Field(default=None, exclude=True)
     specifications: Dict[str, Any] = Field(default_factory=dict)
     features: List[str] = Field(default_factory=list)
     pros: List[str] = Field(default_factory=list)
